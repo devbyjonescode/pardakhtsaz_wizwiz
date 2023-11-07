@@ -515,7 +515,6 @@ if(preg_match('/^changePaymentKeys(\w+)/',$userInfo['step'],$match) && $text != 
     sendMessage($mainValues['change_bot_settings_message'],getGateWaysKeys());
     setUser();
 }
-
 if($data=="editRewardTime" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
     sendMessage("🙃 | لطفا زمان تأخیر در ارسال گزارش رو به ساعت وارد کن\n\nنکته: هر n ساعت گزارش به ربات ارسال میشه! ",$cancelKey);
@@ -1523,6 +1522,25 @@ if(preg_match('/^payWithTronWallet(.*)/',$userInfo['step'], $match) && $text != 
         }else sendMessage($mainValues['used_tax_id']);
     }
 
+}
+if(preg_match('/retryPardakhtSaz(.*)/',$data,$match)) {
+    delMessage();
+    alert($mainValues['please_wait_message']);
+    $referenceNumber = $match[1];
+    $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `state`='needRetry' AND `reference` = ?");
+    $stmt->bind_param("i", $referenceNumber);
+    $stmt->execute();
+    $payInfo = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (is_null($payInfo)) {
+        alert($mainValues['wrong_payment_status']);
+        exit;
+    }
+    $retryReference = $referenceNumber;
+    $retrySubject = 'order';
+    $retryService = 'guest_pay';
+    $retryStatus = 'retry';
+    include_once 'webhook/index.php';
 }
 if(preg_match('/payWithPardakhtSaz(.*)/',$data,$match)) {
     $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ?");
@@ -2891,7 +2909,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
         }else{
             $price = $afterDiscount;
         }
-        
+
         if($botState['cartToCartState'] == "on") $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payWithCartToCart$hash_id"]];
         if($botState['nowPaymentOther'] == "on") $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]];
         if($botState['zarinpal'] == "on") $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/?zarinpal&hash_id=" . $hash_id]];
@@ -5994,7 +6012,6 @@ if($userInfo['step'] == "showAccount" and $text != $buttonValues['cancel']){
          sendMessage("ای وای ، اطلاعاتت اشتباهه 😔",$cancelKey);
     }
 }
-
 if(preg_match('/sConfigRenew(\d+)/', $data,$match)){
     if($botState['sellState']=="off" && $from_id !=$admin){ alert($mainValues['bot_is_updating']); exit(); }
     
@@ -6108,7 +6125,7 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     $rowId = $stmt->insert_id;
     $stmt->close();
 
-    
+
     if($botState['cartToCartState'] == "on") $keyboard[] = [['text' => $buttonValues['cart_to_cart'],  'callback_data' => "payWithCartToCart$hash_id"]];
     if($botState['nowPaymentOther'] == "on") $keyboard[] = [['text' => $buttonValues['now_payment_gateway'],  'url' => $botUrl . "pay/?nowpayment&hash_id=" . $hash_id]];
     if($botState['zarinpal'] == "on") $keyboard[] = [['text' => $buttonValues['zarinpal_gateway'],  'url' => $botUrl . "pay/?zarinpal&hash_id=" . $hash_id]];
@@ -6187,7 +6204,6 @@ if(preg_match('/sConfigUpdate(\d+)/', $data,$match)){
         unlink($file);
     }
 }
-
 if (($data == 'addNewPlan' || $data=="addNewRahgozarPlan") and (($from_id == $admin || $userInfo['isAdmin'] == true))){
     setUser($data);
     $stmt = $connection->prepare("DELETE FROM `server_plans` WHERE `active`=0");
@@ -8720,7 +8736,7 @@ if(preg_match('/approveIncreaseVolume(.*)/',$data,$match) && ($from_id == $admin
     $volume = $res['volume'];
 
     $acctxt = '';
-    
+
 
     if($inbound_id > 0) $response = editClientTraffic($server_id, $inbound_id, $uuid, $volume, 0);
     else $response = editInboundTraffic($server_id, $uuid, $volume, 0);

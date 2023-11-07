@@ -4,13 +4,14 @@ include_once '../config.php';
 //ini_set('display_errors', '1');
 //ini_set('display_startup_errors', '1');
 //error_reporting(E_ALL);
-$referenceNumber = intval($_GET['reference']);
-$subject = $_GET['subject'];
-$service = $_GET['service'];
-$status = $_GET['status'];
+
+$referenceNumber = isset($retryReference) && !empty($retryReference) ? $retryReference : intval($_GET['reference']);
+$subject = isset($retrySubject) && !empty($retrySubject) ? $retrySubject :$_GET['subject'];
+$service = isset($retryService) && !empty($retryService) ? $retryService :$_GET['service'];
+$status = isset($retryStatus) && !empty($retryStatus) ? $retryStatus :$_GET['status'];
 if ($subject != 'order' ||
     $service != 'guest_pay' ||
-    $status !='paid'
+    !in_array($status,['paid','retry'])
 ) {
     exit('access dined');
 }
@@ -21,7 +22,7 @@ if ($subject != 'order' ||
     'SERVER' => $_SERVER
 ];
 file_put_contents('callback' . date('Y-m-d_H-i-s') . '.' . rand(11111111, 99999999) . '.json', json_encode($array));*/
-$stmt = $connection->prepare("SELECT * FROM `pays` WHERE `state`='pending' AND `reference` = ?");
+$stmt = $connection->prepare("SELECT * FROM `pays` WHERE `state` IN ('pending','needRetry') AND `reference` = ?");
 $stmt->bind_param("i", $referenceNumber);
 $stmt->execute();
 $payInfo = $stmt->get_result()->fetch_assoc();
@@ -38,7 +39,7 @@ $validateResponse = validateGuestPay($referenceNumber);
 if (!in_array($validateResponse->data->content->status, ['paid', 'done']) || ($validateResponse->data->content->price / 10) != $price) {
     exit('wrong state in api call');
 }
-$stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved' WHERE `state`='pending' AND `reference` = ?");
+$stmt = $connection->prepare("UPDATE `pays` SET `state` = 'approved' WHERE `state`IN ('pending','needRetry') AND `reference` = ?");
 $stmt->bind_param("s", $referenceNumber);
 $stmt->execute();
 $stmt->close();
@@ -131,12 +132,13 @@ elseif ($payType == "BUY_SUB") {
     $stmt->execute();
     $portType = $stmt->get_result()->fetch_assoc()['port_type'];
     $stmt->close();
-    include '../phpqrcode/qrlib.php';
+    $baseFolder =  isset($retryReference) && !empty($retryReference) ?  '' : '../';
+    include $baseFolder.'phpqrcode/qrlib.php';
 
     for ($i = 1; $i <= $accountCount; $i++) {
         $uniqid = generateRandomString(42, $protocol);
 
-        $savedinfo = file_get_contents('../settings/temp.txt');
+        $savedinfo = file_get_contents($baseFolder.'settings/temp.txt');
         $savedinfo = explode('-', $savedinfo);
         $port = $savedinfo[0] + 1;
         $last_num = $savedinfo[1] + 1;
@@ -150,7 +152,7 @@ elseif ($payType == "BUY_SUB") {
         }
         if (!empty($description)) $remark = $description;
         if ($portType == "auto") {
-            file_put_contents('../settings/temp.txt', $port . '-' . $last_num);
+            file_put_contents($baseFolder.'settings/temp.txt', $port . '-' . $last_num);
         } else {
             $port = rand(1111, 65000);
         }
@@ -166,23 +168,48 @@ elseif ($payType == "BUY_SUB") {
                 $response = addInboundAccount($server_id, $uniqid, $inbound_id, $expire_microdate, $remark, $volume, $limitip, null, $fid);
             }
         }
-
+        $userMessage = "اکانت شما در حال ساخت است تا چند دقیقه آینده اکانت برای شما ارسال خواهد شد";
+        $errorMessage = "خطا در زمان ساخت vpn اتفاق افتاد
+                
+▫️آیدی کاربر: $from_id
+👨‍💼اسم کاربر: $first_name
+⚡️ نام کاربری: $username
+🎈 نام سرویس: $remark";
+        $retryKeys = json_encode(['inline_keyboard' => [
+            [
+                ['text' => "تلاش مجدد برای ساخت vpn", 'callback_data' => "retryPardakhtSaz".$referenceNumber]
+            ],
+        ]]);
         if (is_null($response)) {
-            sendMessage('❌ | 🥺 گلم ، اتصال به سرور برقرار نیست لطفا مدیر رو در جریان بزار ...');
+            sendMessage($userMessage);
+            sendMessage($errorMessage.'ارتباط با سرور vpn برقرار نشد', $retryKeys, 'html', $admin);
+            $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'needRetry' WHERE `state`='approved' AND `reference` = ?");
+            $stmt->bind_param("s", $referenceNumber);
+            $stmt->execute();
+            $stmt->close();
             exit;
         }
         if ($response == "inbound not Found") {
-            sendMessage("❌ | 🥺 سطر (inbound) با آیدی $inbound_id تو این سرور وجود نداره ، مدیر رو در جریان بزار ...");
+            sendMessage($userMessage);
+            sendMessage($errorMessage."❌ | 🥺 سطر (inbound) با آیدی $inbound_id تو این سرور وجود نداره ، ", $retryKeys, 'html', $admin);
+            $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'needRetry' WHERE `state`='approved' AND `reference` = ?");
+            $stmt->bind_param("s", $referenceNumber);
+            $stmt->execute();
+            $stmt->close();
             exit;
         }
         if (!$response->success) {
-            sendMessage("خطای سرور {$serverInfo['title']}:\n\n" . ($response->msg), null, null, $admin);
+            sendMessage($userMessage);
+            sendMessage($errorMessage."خطای سرور {$serverInfo['title']}:\n\n" . ($response->msg), $retryKeys, 'html', $admin);
+            $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'needRetry' WHERE `state`='approved' AND `reference` = ?");
+            $stmt->bind_param("s", $referenceNumber);
+            $stmt->execute();
+            $stmt->close();
             exit;
         }
 
         $token = RandomString(30);
         $subLink = $botState['subLinkState'] == "on" ? $botUrl . "settings/subLink.php?token=" . $token : "";
-
         $vraylink = getConnectionLink($server_id, $uniqid, $protocol, $remark, $port, $netType, $inbound_id, $rahgozar, $customPath, $customPort, $customSni);
         foreach ($vraylink as $vray_link) {
             $acc_text = "
@@ -208,11 +235,10 @@ elseif ($payType == "BUY_SUB") {
             $ecc = 'L';
             $pixel_Size = 10;
             $frame_Size = 10;
-
-            QRcode::png($vray_link, '../' . $file, $ecc, $pixel_Size, $frame_Size);
-            addBorderImage('../' . $file);
+            QRcode::png($vray_link, $baseFolder.$file, $ecc, $pixel_Size, $frame_Size);
+            addBorderImage($baseFolder.$file);
             sendPhoto($botUrl . $file, $acc_text, json_encode(['inline_keyboard' => [[['text' => $buttonValues['back_to_main'], 'callback_data' => "mainMenu"]]]]), "HTML", $uid);
-            unlink('../' . $file);
+            unlink($baseFolder.$file);
         }
 
         $vray_link = json_encode($vraylink);
@@ -294,6 +320,22 @@ elseif ($payType == "RENEW_ACCOUNT") {
         $response = editInboundTraffic($server_id, $uuid, $volume, $days, "renew");
 
     if (is_null($response)) {
+        $retryKeys = json_encode(['inline_keyboard' => [
+            [
+                ['text' => "تلاش مجدد برای تمدید vpn", 'callback_data' => "retryPardakhtSaz".$referenceNumber]
+            ],
+        ]]);
+        sendMessage("خطا در تمدید اکانت ،ارتباط با سرور vpn برقرار نشد
+        
+▫️آیدی کاربر: $from_id
+👨‍💼اسم کاربر: $first_name
+⚡️ نام کاربری: $username
+🎈 نام سرویس: $remark
+        ", $retryKeys, 'html', $admin);
+        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'needRetry' WHERE `state`='approved' AND `reference` = ?");
+        $stmt->bind_param("s", $referenceNumber);
+        $stmt->execute();
+        $stmt->close();
         alert('🔻مشکل فنی در اتصال به سرور. لطفا به مدیریت اطلاع بدید', true);
         exit;
     }

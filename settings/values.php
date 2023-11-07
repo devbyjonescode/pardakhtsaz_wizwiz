@@ -31,6 +31,7 @@ $mainValues = [
 ",
     'out_of_connection_capacity'=>'ظرفیت این کانکشن پر شده است',
     'out_of_server_capacity'=>'ظرفیت این سرور پر شده است',
+    'wrong_payment_status'=>'پرداخت در وضعیت تلاش مجدد نبود',
     'can_create_specific_account'=> "روی این پلن فقط AMOUNT اکانت میشه ساخت",
     'buy_account_cart_to_cart'=>"♻️ عزیزم یه تصویر از فیش واریزی یا شماره پیگیری -  ساعت پرداخت - نام پرداخت کننده رو در یک پیام برام ارسال کن :
 
