@@ -23,6 +23,25 @@ function bot($method, $datas = []){
         return json_decode($res);
     }
 }
+
+function deletePendingPayment($userId, $type = '')
+{
+    global $connection;
+    $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `user_id` = ? AND `type` LIKE '" . $type . "' AND `state` = 'pending'");
+    $stmt->bind_param("i", $userId);
+    $stmt->execute();
+    $pendingPaymentList = $stmt->get_result();
+    while ($pendingPayment = $pendingPaymentList->fetch_assoc()) {
+        if (isset($pendingPayment['payid']) && is_numeric($pendingPayment['payid'])) {
+            delMessage($pendingPayment['payid'], $userId);
+        }
+    }
+    $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` LIKE '" . $type . "' AND `state` = 'pending'");
+    $stmt->bind_param("i", $userId);
+    $stmt->execute();
+    $stmt->close();
+}
+
 function sendMessage($txt, $key = null, $parse ="MarkDown", $ci= null, $msg = null){
     global $from_id;
     $ci = $ci??$from_id;

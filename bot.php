@@ -823,11 +823,7 @@ if($userInfo['step'] == "increaseMyWallet" && $text != $buttonValues['cancel']){
     }
     sendMessage("🪄 لطفا صبور باشید ...",$removeKeyboard);
     $hash_id = RandomString();
-    $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` = 'INCREASE_WALLET' AND `state` = 'pending'");
-    $stmt->bind_param("i", $from_id);
-    $stmt->execute();
-    $stmt->close();
-    
+    deletePendingPayment($from_id, $type = 'INCREASE_WALLET');
     $time = time();
     $stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `user_id`, `type`, `plan_id`, `volume`, `day`, `price`, `request_date`, `state`)
                                 VALUES (?, ?, 'INCREASE_WALLET', '0', '0', '0', ?, ?, 'pending')");
@@ -1621,7 +1617,7 @@ if(preg_match('/payWithPardakhtSaz(.*)/',$data,$match)) {
             [['text' => "ورود به درگاه پرداخت", 'url' => $payResponseData->content->invoice_link]],
             [['text'=>$buttonValues['back_to_main'],'callback_data'=>"mainMenu"]]
         ]]);
-        sendMessage("
+        $response = sendMessage("
 ✅ لینک پرداخت با موفقیت ایجاد شد
 
 💰مبلغ : " . $payInfo['price'] . " تومان
@@ -1629,6 +1625,12 @@ if(preg_match('/payWithPardakhtSaz(.*)/',$data,$match)) {
 ✔️ لطفا بر روی دکمه ورود به درگاه پرداخت کلیک کنید و مراحل پرداخت را تکمیل کنید ، بعد از اتمام مراحل پرداخت تنظیمات از همین طریق برای شما ارسال خواهد شد.
 ⁮⁮ ⁮⁮
 ",$keys);
+        if(isset($response->result->message_id)){
+            $stmt = $connection->prepare("UPDATE `pays` SET `payid` = ? WHERE `hash_id` = ?");
+            $stmt->bind_param("ss", $response->result->message_id, $match[1]);
+            $stmt->execute();
+            $stmt->close();
+        }
     }else{
         sendMessage("مشکلی رخ داده است، لطفا به پشتیبانی اطلاع بدهید");
         sendMessage("خطای سرور  PardakhtSaz:\n\n" . json_encode($payResponse->data), null, null, $admin);
@@ -2670,10 +2672,7 @@ if((preg_match('/^discountCustomPlanDay(\d+)/',$userInfo['step'], $match) || pre
         
         $price =  ($volume * $gbPrice) + ($days * $dayPrice);
         $hash_id = RandomString();
-        $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` = 'BUY_SUB' AND `state` = 'pending'");
-        $stmt->bind_param("i", $from_id);
-        $stmt->execute();
-        $stmt->close();
+        deletePendingPayment($from_id, $type = 'BUY_SUB');
         
         $time = time();
         $stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `description`, `user_id`, `type`, `plan_id`, `volume`, `day`, `price`, `request_date`, `state`)
@@ -2888,11 +2887,7 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
         
         if(!preg_match('/^discountSelectPlan/', $userInfo['step'])){
             $hash_id = RandomString();
-            $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` = 'BUY_SUB' AND `state` = 'pending'");
-            $stmt->bind_param("i", $from_id);
-            $stmt->execute();
-            $stmt->close();
-            
+            deletePendingPayment($from_id, $type = 'BUY_SUB');
             $time = time();
             if(isset($accountCount)){
                 $stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `user_id`, `type`, `plan_id`, `volume`, `day`, `price`, `request_date`, `state`, `agent_bought`, `agent_count`)
@@ -6110,11 +6105,8 @@ if(preg_match('/sConfigRenewPlan(\d+)_(\d+)/',$data, $match) && ($botState['sell
     $token = base64_encode("{$from_id}.{$id}");
     
     $hash_id = RandomString();
-    $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` = 'RENEW_SCONFIG' AND `state` = 'pending'");
-    $stmt->bind_param("i", $from_id);
-    $stmt->execute();
-    $stmt->close();
-
+    deletePendingPayment($from_id, $type = 'RENEW_SCONFIG');
+    $uuid = $userInfo['temp'];
     setUser('', 'temp');
     $description = json_encode(["uuid"=>$uuid, "remark"=>$remark],488);
     $time = time();
@@ -7441,11 +7433,8 @@ if(preg_match('/^discountRenew(\d+)_(\d+)/',$userInfo['step'], $match) || preg_m
     }
     if(!preg_match('/^discountRenew/', $userInfo['step'])){
         $hash_id = RandomString();
-        $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` = 'RENEW_ACCOUNT' AND `state` = 'pending'");
-        $stmt->bind_param("i", $from_id);
-        $stmt->execute();
-        $stmt->close();
-        
+        deletePendingPayment($from_id, $type = 'RENEW_ACCOUNT');
+
         $time = time();
         $stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `user_id`, `type`, `plan_id`, `volume`, `day`, `price`, `request_date`, `state`)
                                     VALUES (?, ?, 'RENEW_ACCOUNT', ?, '0', '0', ?, ?, 'pending')");
@@ -8257,11 +8246,8 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     
     
     $hash_id = RandomString();
-    $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` LIKE '%INCREASE_DAY%' AND `state` = 'pending'");
-    $stmt->bind_param("i", $from_id);
-    $stmt->execute();
-    $stmt->close();
-    
+    deletePendingPayment($from_id, $type = '%INCREASE_DAY%');
+
     $time = time();
     $stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `user_id`, `type`, `plan_id`, `volume`, `day`, `price`, `request_date`, `state`)
                                 VALUES (?, ?, ?, '0', '0', '0', ?, ?, 'pending')");
@@ -8595,11 +8581,8 @@ if(preg_match('/increaseVolumePlan(?<orderId>.+)_(?<volumeId>.+)/',$data,$match)
     }
 
     $hash_id = RandomString();
-    $stmt = $connection->prepare("DELETE FROM `pays` WHERE `user_id` = ? AND `type` LIKE '%INCREASE_VOLUME%' AND `state` = 'pending'");
-    $stmt->bind_param("i", $from_id);
-    $stmt->execute();
-    $stmt->close();
-    
+    deletePendingPayment($from_id, $type = '%INCREASE_VOLUME%');
+
     $time = time();
     $stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `user_id`, `type`, `plan_id`, `volume`, `day`, `price`, `request_date`, `state`)
                                 VALUES (?, ?, ?, '0', '0', '0', ?, ?, 'pending')");
