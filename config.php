@@ -317,8 +317,8 @@ function getAgentKeys(){
     ]]);
 }
 function getAdminKeys(){
-    global $buttonValues, $mainValues, $from_id, $admin;
-    
+    global $buttonValues, $mainValues, $from_id, $admin,$botState;
+
     return json_encode(['inline_keyboard'=>[
         [['text'=>$buttonValues['bot_reports'],'callback_data'=>"botReports"],['text'=>$buttonValues['message_to_user'],'callback_data'=>"messageToSpeceficUser"]],
         [['text'=>$buttonValues['user_reports'],'callback_data'=>"userReports"]],
@@ -335,6 +335,7 @@ function getAdminKeys(){
         [['text'=>$buttonValues['gateways_settings'],'callback_data'=>"gateWays_Channels"],['text'=>$buttonValues['bot_settings'],'callback_data'=>'botSettings']],
         [['text'=>$buttonValues['tickets_list'],'callback_data'=>"ticketsList"],['text'=>$buttonValues['message_to_all'],'callback_data'=>"message2All"]],
         [['text'=>$buttonValues['forward_to_all'],'callback_data'=>"forwardToAll"]],
+        $botState['pardakhtSazState'] == "on" ? [['text'=>$buttonValues['pardakht_saz_list'],'callback_data'=>"pardakhtSazList"]] : [],
         [
             ['text'=>$buttonValues['agent_list'],'callback_data'=>"agentsList"],
             ['text'=>'درخواست های رد شده','callback_data'=>"rejectedAgentList"]
@@ -451,7 +452,7 @@ function checkSpam(){
 function getAgentsList($offset = 0){
     global $connection, $mainValues, $buttonValues;
     $limit = 15;
-    
+
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `is_agent` = 1 LIMIT $limit OFFSET $offset");
     $stmt->execute();
     $agentList = $stmt->get_result();
@@ -459,7 +460,7 @@ function getAgentsList($offset = 0){
     
     $keys = array();
     if($agentList->num_rows == 0 && $offset == 0) return null;
-    
+
     $keys[] = [['text'=>"حذف",'callback_data'=>"wizwizch"],['text'=>"درصد تخفیف",'callback_data'=>"wizwizch"],['text'=>"تاریخ نمایندگی",'callback_data'=>"wizwizch"],['text'=>"اسم نماینده",'callback_data'=>"wizwizch"],['text'=>"آیدی عددی",'callback_data'=>"wizwizch"]];
     if($agentList->num_rows > 0){
         while($row = $agentList->fetch_assoc()){
@@ -486,27 +487,27 @@ function getAgentsList($offset = 0){
         $keys[] = [
             ['text'=>" «« صفحه قبلی ««",'callback_data'=>"nextAgentList" . ($offset - $limit)]
             ];
-            
+
     $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }
 function getAgentDiscounts($agentId){
     global $connection, $mainValues, $buttonValues, $botState;
-    
+
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `is_agent` = 1 AND `userid` = ?");
     $stmt->bind_param("i", $agentId);
     $stmt->execute();
     $agentInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     $keys = array();
-    
+
     $discounts = json_decode($agentInfo['discount_percent'],true);
 
     $normal = $discounts['normal'];
     $keys[] = [['text'=>" ",'callback_data'=>"wizwizch"],
     ['text'=>$normal . "%",'callback_data'=>"editAgentDiscountNormal" . $agentId . "_0"],
-    ['text'=>"عمومی",'callback_data'=>"wizwizch"]];            
-    
+    ['text'=>"عمومی",'callback_data'=>"wizwizch"]];
+
     if($botState['agencyPlanDiscount']=="on"){
         foreach($discounts['plans'] as $planId=>$discount){
             $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
@@ -514,16 +515,16 @@ function getAgentDiscounts($agentId){
             $stmt->execute();
             $info = $stmt->get_result()->fetch_assoc();
             $stmt->close();
-            
+
             $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `id` = ?");
             $stmt->bind_param("i", $info['catid']);
             $stmt->execute();
             $catInfo = $stmt->get_result()->fetch_assoc();
             $stmt->close();
-            
+
             $keys[] = [['text'=>"❌",'callback_data'=>"removePercentOfAgentPlan" . $agentId . "_" . $planId],
             ['text'=>$discount . "%",'callback_data'=>"editAgentDiscountPlan" . $agentId . "_" . $planId],
-            ['text'=>$info['title'] . " " . $catInfo['title'],'callback_data'=>"wizwizch"]];            
+            ['text'=>$info['title'] . " " . $catInfo['title'],'callback_data'=>"wizwizch"]];
         }
     }else{
         foreach($discounts['servers'] as $serverId=>$discount){
@@ -532,16 +533,52 @@ function getAgentDiscounts($agentId){
             $stmt->execute();
             $info = $stmt->get_result()->fetch_assoc();
             $stmt->close();
-            
+
             $keys[] = [['text'=>"❌",'callback_data'=>"removePercentOfAgentServer" . $agentId . "_" . $serverId],
             ['text'=>$discount . "%",'callback_data'=>"editAgentDiscountServer" . $agentId . "_" . $serverId],
-            ['text'=>$info['title'],'callback_data'=>"wizwizch"]];            
-        }                
+            ['text'=>$info['title'],'callback_data'=>"wizwizch"]];
+        }
     }
     if($botState['agencyPlanDiscount']=="on")$keys[] = [['text' => "افزودن تخفیف پلن", 'callback_data' => "addDiscountPlanAgent" . $agentId]];
     else $keys[] = [['text' => "افزودن تخفیف سرور", 'callback_data' => "addDiscountServerAgent" . $agentId]];
     $keys[] = [['text' => $buttonValues['back_button'], 'callback_data' => "agentsList"]];
     return json_encode(['inline_keyboard'=>$keys]);
+}
+
+function guestPay($price,$description)
+{
+    global $paymentKeys;
+
+    $curl = curl_init();
+
+    curl_setopt_array($curl, array(
+        CURLOPT_URL => 'https://pardakhtsaz.com/api/dev/orders/guestpay/new',
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_ENCODING => '',
+        CURLOPT_MAXREDIRS => 10,
+        CURLOPT_TIMEOUT => 0,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+        CURLOPT_CUSTOMREQUEST => 'POST',
+        CURLOPT_POSTFIELDS =>'{
+    "order_type" : "buy",
+    "amount" : "'. ($price * 10).'",
+    "is_irr" : true,
+    "unit" : "'.$paymentKeys['pardakhtSazUnitId'].'",
+    "destination" : "'.$paymentKeys['pardakhtSazWallet'].'",
+    "description" : "'.$description.'",
+    "meta_data" : {}
+}',
+        CURLOPT_HTTPHEADER => array(
+            'Secret-Id: ' . $paymentKeys['pardakhtSazId'],
+            'Secret-Key: ' . $paymentKeys['pardakhtSazKey'],
+            'Content-Type: application/json'
+        ),
+    ));
+    $response = curl_exec($curl);
+
+    curl_close($curl);
+    return json_decode($response);
 }
 function NOWPayments($method, $endpoint, $datas = []){
     global $paymentKeys;
@@ -804,6 +841,7 @@ function getGateWaysKeys(){
     $cartToCartState = $botState['cartToCartState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $walletState = $botState['walletState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $sellState = $botState['sellState']=="on"?$buttonValues['on']:$buttonValues['off'];
+    $pardakhtSazState = $botState['pardakhtSazState'] == "on" ? $buttonValues['on'] : $buttonValues['off'];
     $weSwapState = $botState['weSwapState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $robotState = $botState['botState']=="on"?$buttonValues['on']:$buttonValues['off'];
     $nowPaymentWallet = $botState['nowPaymentWallet']=="on"?$buttonValues['on']:$buttonValues['off'];
@@ -846,8 +884,28 @@ function getGateWaysKeys(){
             ['text'=>"آدرس والت ترون",'callback_data'=>"wizwizch"]
         ],
         [
+            ['text' => (!empty($paymentKeys['pardakhtSazId']) ? $paymentKeys['pardakhtSazId'] : " "), 'callback_data' => "changePaymentKeyspardakhtSazId"],
+            ['text' => "secret id پرداخت ساز", 'callback_data' => "wizwizch"]
+        ],
+        [
+            ['text' => (!empty($paymentKeys['pardakhtSazKey']) ? $paymentKeys['pardakhtSazKey'] : " "), 'callback_data' => "changePaymentKeyspardakhtSazKey"],
+            ['text' => "secret key پرداخت ساز", 'callback_data' => "wizwizch"]
+        ],
+        [
+            ['text' => (!empty($paymentKeys['pardakhtSazWallet']) ? $paymentKeys['pardakhtSazWallet'] : " "), 'callback_data' => "changePaymentKeyspardakhtSazWallet"],
+            ['text' => "wallet پرداخت ساز", 'callback_data' => "wizwizch"]
+        ],
+        [
+            ['text' => (!empty($paymentKeys['pardakhtSazUnitId']) ? $paymentKeys['pardakhtSazUnitId'] : " "), 'callback_data' => "changePaymentKeyspardakhtSazUnitId"],
+            ['text' => "unit id پرداخت ساز", 'callback_data' => "wizwizch"]
+        ],
+        [
             ['text'=>$weSwapState,'callback_data'=>"changeGateWaysweSwapState"],
             ['text'=>"درگاه وی سواپ",'callback_data'=>"wizwizch"]
+        ],
+        [
+            ['text' => $pardakhtSazState, 'callback_data' => "changeGateWayspardakhtSazState"],
+            ['text' => "درگاه پرداخت ساز", 'callback_data' => "wizwizch"]
         ],
         [
             ['text'=>$cartToCartState,'callback_data'=>"changeGateWayscartToCartState"],
@@ -1082,7 +1140,7 @@ function getBotReportKeys(){
     $totalRewards = number_format($stmt->get_result()->fetch_assoc()['total']) . " تومان";
     $stmt->close();
     
-    
+
     $persian = explode("-",jdate("Y-n-1", time()));
     $gregorian = jalali_to_gregorian($persian[0], $persian[1], $persian[2]);
     $date =  $gregorian[0] . "-" . $gregorian[1] . "-" . $gregorian[2];
@@ -1429,7 +1487,7 @@ function getUserOrderDetailKeys($id){
                             $up = $clientsStates[$emailKey]->up;
                             $enable = $clientsStates[$emailKey]->enable;
                             if(!$client->enable) $enable = false;
-                            $down = $clientsStates[$emailKey]->down; 
+                            $down = $clientsStates[$emailKey]->down;
                             break;
                         }
                     }
@@ -1798,15 +1856,15 @@ function getOrderDetailKeys($from_id, $id){
                     if($clients[0]->id == $uuid || $clients[0]->password == $uuid) {
                         $total = $row->total;
                         $up = $row->up;
-                        $down = $row->down; 
+                        $down = $row->down;
                         $enable = $row->enable;
                         $expiryTime = $row->expiryTime;
-                        
+
                         $netType = json_decode($row->streamSettings)->network;
                         $security = json_decode($row->streamSettings)->security;
-                        
+
                         $clientsStates = $row->clientStats;
-                        
+
                         $inboundEmail = $clients[0]->email;
                         $allEmails = array_column($clientsStates,'email');
                         $clienEmailKey = array_search($inboundEmail,$allEmails);
@@ -1815,7 +1873,7 @@ function getOrderDetailKeys($from_id, $id){
                         $clientUp = $clientsStates[$clienEmailKey]->up;
                         $clientDown = $clientsStates[$clienEmailKey]->down;
                         $clientExpiryTime = $clientsStates[$clienEmailKey]->expiryTime;
-                            
+
                         if($clientTotal != 0 && $clientTotal != null && $clientExpiryTime != 0 && $clientExpiryTime != null){
                             $up += $clientUp;
                             $down += $clientDown;
@@ -1830,7 +1888,7 @@ function getOrderDetailKeys($from_id, $id){
                     if($row->id == $inbound_id) {
                         $netType = json_decode($row->streamSettings)->network;
                         $security = json_decode($row->streamSettings)->security;
-                        
+
                         $clientsStates = $row->clientStats;
                         $clients = json_decode($row->settings)->clients;
                         foreach($clients as $key => $client){
@@ -1838,12 +1896,12 @@ function getOrderDetailKeys($from_id, $id){
                                 $email = $client->email;
                                 $emails = array_column($clientsStates,'email');
                                 $emailKey = array_search($email,$emails);
-                                
+
                                 $total = $clientsStates[$emailKey]->total;
                                 $up = $clientsStates[$emailKey]->up;
                                 $enable = $clientsStates[$emailKey]->enable;
                                 if(!$client->enable) $enable = false;
-                                $down = $clientsStates[$emailKey]->down; 
+                                $down = $clientsStates[$emailKey]->down;
                                 break;
                             }
                         }
@@ -2555,7 +2613,7 @@ function changeInboundState($server_id, $uuid){
             break;
         }
     }
-    
+
     if(!isset($settings['clients'][0]['subId']) && ($serverType == "sanaei" || $serverType == "alireza")) $settings['clients'][0]['subId'] = RandomString(16);
     if(!isset($settings['clients'][0]['enable']) && ($serverType == "sanaei" || $serverType == "alireza")) $settings['clients'][0]['enable'] = true;
 
@@ -2564,7 +2622,7 @@ function changeInboundState($server_id, $uuid){
     $settings = json_encode($settings,488);
 
     $newEnable = $enable == true?false:true;
-    
+
     $dataArr = array('up' => $row->up,'down' => $row->down,'total' => $row->total,'remark' => $row->remark,'enable' => $newEnable,
         'expiryTime' => $row->expiryTime, 'listen' => '','port' => $row->port,'protocol' => $row->protocol,'settings' => $settings,
         'streamSettings' => $row->streamSettings, 'sniffing' => $row->sniffing);
@@ -2572,21 +2630,21 @@ function changeInboundState($server_id, $uuid){
 
     $serverName = $server_info['username'];
     $serverPass = $server_info['password'];
-    
+
     $loginUrl = $panel_url . '/login';
-    
+
     $postFields = array(
         "username" => $serverName,
         "password" => $serverPass
         );
-        
+
     $curl = curl_init();
     curl_setopt($curl, CURLOPT_URL, $loginUrl);
     curl_setopt($curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
     curl_setopt($curl, CURLOPT_POST, 1);
     curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 3);
-    curl_setopt($curl, CURLOPT_TIMEOUT, 3); 
+    curl_setopt($curl, CURLOPT_TIMEOUT, 3);
     curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($postFields));
     curl_setopt($curl, CURLOPT_COOKIEJAR, dirname(__FILE__) . '/tempCookie.txt');
     $loginResponse = json_decode(curl_exec($curl),true);
@@ -2740,7 +2798,7 @@ function changeClientState($server_id, $inbound_id, $uuid){
         if($row->id == $inbound_id) {
             $settings = json_decode($row->settings, true);
             $clients = $settings['clients'];
-            
+
             foreach($clients as $key => $client){
                 if($client['id'] == $uuid || $client['password'] == $uuid){
                     $client_key = $key;
@@ -2751,7 +2809,7 @@ function changeClientState($server_id, $inbound_id, $uuid){
         }
     }
     if($client_key == -1) return null;
-    
+
     if(!isset($settings['clients'][$client_key]['subId']) && ($serverType == "sanaei" || $serverType == "alireza")) $settings['clients'][$client_key]['subId'] = RandomString(16);
     $settings['clients'][$client_key]['enable'] = $enable == true?false:true;
 
@@ -2764,21 +2822,21 @@ function changeClientState($server_id, $inbound_id, $uuid){
 
     $serverName = $server_info['username'];
     $serverPass = $server_info['password'];
-    
+
     $loginUrl = $panel_url . '/login';
-    
+
     $postFields = array(
         "username" => $serverName,
         "password" => $serverPass
         );
-        
+
     $curl = curl_init();
     curl_setopt($curl, CURLOPT_URL, $loginUrl);
     curl_setopt($curl, CURLOPT_FOLLOWLOCATION, 1);
     curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
     curl_setopt($curl, CURLOPT_POST, 1);
     curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 3);
-    curl_setopt($curl, CURLOPT_TIMEOUT, 3); 
+    curl_setopt($curl, CURLOPT_TIMEOUT, 3);
     curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($postFields));
     curl_setopt($curl, CURLOPT_COOKIEJAR, dirname(__FILE__) . '/tempCookie.txt');
     $loginResponse = json_decode(curl_exec($curl),true);
@@ -2789,7 +2847,7 @@ function changeClientState($server_id, $inbound_id, $uuid){
 
     $phost = str_ireplace('https://','',str_ireplace('http://','',$panel_url));
     if($serverType == "sanaei" || $serverType == "alireza"){
-        
+
         $newSetting = array();
         $newSetting['clients'][] = $editedClient;
         $newSetting = json_encode($newSetting);
@@ -2798,10 +2856,10 @@ function changeClientState($server_id, $inbound_id, $uuid){
             "id"=>$inbound_id,
             "settings" => $newSetting
             );
-            
+
         if($serverType == "sanaei") $url = "$panel_url/panel/inbound/updateClient/" . rawurlencode($uuid);
         else $url = "$panel_url/xui/inbound/updateClient/" . rawurlencode($uuid);
-        
+
         curl_setopt_array($curl, array(
             CURLOPT_URL => $url,
             CURLOPT_RETURNTRANSFER => true,
@@ -3456,7 +3514,7 @@ function addInboundAccount($server_id, $client_id, $inbound_id, $expiryTime, $re
     $stmt->close();
 
     $panel_url = $server_info['panel_url'];
-    $cookie = 'Cookie: session='.$server_info['cookie'];
+//    $cookie = 'Cookie: session='.$server_info['cookie'];
     $serverType = $server_info['type'];
     $reality = $server_info['reality'];
     $volume = ($volume == 0) ? 0 : floor($volume * 1073741824);
@@ -3601,7 +3659,7 @@ function addInboundAccount($server_id, $client_id, $inbound_id, $expiryTime, $re
     }
 
     $response = curl_exec($curl);
-    unlink("tempCookie.txt");
+    @unlink("tempCookie.txt");
     curl_close($curl);
     return $response = json_decode($response);
 
@@ -3675,7 +3733,7 @@ function getConnectionLink($server_id, $uniqid, $protocol, $remark, $port, $netT
     $header_type = $server_info['header_type'];
     $request_header = $server_info['request_header'];
     $response_header = $server_info['response_header'];
-    $cookie = 'Cookie: session='.$server_info['cookie'];
+//    $cookie = 'Cookie: session='.$server_info['cookie'];
     $serverType = $server_info['type'];
     preg_match("/^Host:(.*)/i",$request_header,$hostMatch);
 
@@ -4793,7 +4851,7 @@ function getJson($server_id){
     $stmt->close();
 
     $panel_url = $server_info['panel_url'];
-    $cookie = 'Cookie: session='.$server_info['cookie'];
+//    $cookie = 'Cookie: session='.$server_info['cookie'];
 
     $serverName = $server_info['username'];
     $serverPass = $server_info['password'];
@@ -4841,7 +4899,7 @@ function getJson($server_id){
     ));
 
     $response = curl_exec($curl);
-    unlink("tempCookie.txt");
+    @unlink("tempCookie.txt");
 
     curl_close($curl);
     return $response = json_decode($response);
