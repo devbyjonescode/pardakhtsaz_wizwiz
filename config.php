@@ -566,7 +566,7 @@ function getAgentDiscounts($agentId){
 
 function guestPay($price,$description)
 {
-    global $paymentKeys;
+    global $paymentKeys, $botUrl;
 
     $curl = curl_init();
 
@@ -574,7 +574,7 @@ function guestPay($price,$description)
         CURLOPT_URL => 'https://pardakhtsaz.com/api/dev/orders/guestpay/new',
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_ENCODING => '',
-        CURLOPT_MAXREDIRS => 10,
+        CURLOPT_MAXREDIRS => 1,
         CURLOPT_TIMEOUT => 0,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
@@ -586,7 +586,7 @@ function guestPay($price,$description)
     "unit" : "'.$paymentKeys['pardakhtSazUnitId'].'",
     "destination" : "'.$paymentKeys['pardakhtSazWallet'].'",
     "description" : "'.$description.'",
-    "meta_data" : {}
+    "meta_data" : {"webhook_url" : "'.$botUrl.'webhook"}
 }',
         CURLOPT_HTTPHEADER => array(
             'Secret-Id: ' . $paymentKeys['pardakhtSazId'],
